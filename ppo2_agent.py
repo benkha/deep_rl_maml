@@ -10,20 +10,19 @@ import tensorflow as tf
 import baselines.ppo2.ppo2 as ppo2
 import gym_remote.exceptions as gre
 
-from sonic_util import make_env, test_envs
-
+from sonic_util import make_env, sample_env
 
 def main():
     """Run PPO until the environment throws an exception."""
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True # pylint: disable=E1101
 
-    test_envs()
+    env = sample_env()
 
     with tf.Session(config=config):
         # Take more timesteps than we need to be sure that
         # we stop due to an exception.
-        env = DummyVecEnv([make_env])
+        # env = DummyVecEnv([make_env])
 
         model, all_returns = ppo2.learn(network='cnn',
                    env=env,

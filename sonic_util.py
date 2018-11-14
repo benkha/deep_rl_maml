@@ -8,10 +8,9 @@ import numpy as np
 from baselines.common.atari_wrappers import WarpFrame, FrameStack
 from retro_contest.local import make
 import retrowrapper
+import random
 
 retrowrapper.set_retro_make( make )
-
-# sonic_env = make(game='SonicTheHedgehog-Genesis', state='LabyrinthZone.Act1')
 
 sonic_envs = {
     'SonicTheHedgehog-Genesis': [
@@ -79,20 +78,17 @@ sonic_envs = {
     ]
 }
 
-def test_envs():
-    for game in sonic_envs:
-        for state in sonic_envs[game]:
-            print('==== FIRST GAME STATE ===')
-            print(game, state)
-            env = retrowrapper.RetroWrapper(game=game, state=state)
-            
+def sample_env():
+    game_states = [(game, state) for game in sonic_envs for state in sonic_envs[game]]
+    game, state = random.choice(game_states)
+    return make_env(retrowrapper.RetroWrapper(game=game, state=state))
 
-def make_env(stack=True, scale_rew=True):
+
+def make_env(env, stack=True, scale_rew=True):
     """
     Create an environment with some standard wrappers.
     """
-    # env = grc.RemoteEnv('tmp/sock')
-    env = SonicDiscretizer(sonic_env)
+    env = SonicDiscretizer(env)
     if scale_rew:
         env = RewardScaler(env)
     env = WarpFrame(env)
