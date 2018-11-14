@@ -2,6 +2,8 @@ import tensorflow as tf
 import numpy as np
 
 import time
+from sonic_util import make_env, sample_env
+
 
 def build_mlp(x, output_size, scope, n_layers, size, activation=tf.tanh, output_activation=None, regularizer=None):
     i = 0
@@ -29,6 +31,14 @@ class MAML(object):
 		self.batch_size = computation_graph_args['batch_size']
 		self.horizon = computation_graph_args['horizon']
 		self.n_trajectories = computation_graph_args['n_trajectories']
+        self.meta_model_path = computation_graph_args['meta_model_path']
+
+        self.replay_buffer = ReplayBuffer(
+            computation_graph_args['replay_buffer_size'], 
+            computation_graph_args['frame_history_len']
+        )
+
+        self.model_saver = tf.train.Saver()
 
 	def init_tf_sess(self):
 		tf_config = tf.ConfigProto(inter_op_parallelism_threads=1, intra_op_parallelism_threads=1)
@@ -43,22 +53,20 @@ class MAML(object):
 
     def build_computation_graph(self):
         self.loss = 0.0 # TODO: build full computation graph, I think this should depend on using a MLP to sample actions not sure
-    	self.meta_optimizer = tf.AdamOptimizer(self.beta).minimize(self.loss)
+    	self.optimizer = tf.train.AdamOptimizer(self.alpha).minimize(self.loss)
+
+    def build_meta_computation_graph(self):
+        self.meta_loss = tf.reduce_sum(trajectory_losses) / tf.to_float(self.batch_size)
+        self.meta_optimizer = tf.train.AdamOptimizer(self.beta).minimize(self.meta_loss)
 
     def meta_step(self, learned_policies):
         # TODO: figure out how to pass in learned policies to feed_dict in the best way
         # the loss function uses the sum of the learned policies' individual losses to take a step
     	self.sess.run(self.meta_theta, feed_dict={})
 
-    def sample_trajectories(self, task, for_meta):
-        stats = []
-
-        # TODO: Change env depending on input task
-        env = make(game='SonicTheHedgehog-Genesis', state='LabyrinthZone.Act1')
-        for i in range(self.n_trajectories):
-            trajectory = self.sample_trajectory(env, for_meta=for_meta)
-            stats += s
-        return stats
+    def sample_trajectories(self, env, for_meta):
+        for _ in range(self.n_trajectories):
+            self.sample_trajectory(env, for_meta=for_meta)
 
     def sample_trajectory(self, env, for_meta):
     	obs = env.reset()
@@ -70,13 +78,13 @@ class MAML(object):
     		obs, rew, done, _ = env.step(ac)
 
     		# Add to replay buffer
-    		if is_evaluation:
-    			pass # TODO
-    		else:
-    			pass # TODO
+            self.replay_buffer.store() # TODO
 
     		if done:
     			obs = env.reset()
+
+    def load_meta_model(self):
+        self.model_saver.restore(self.sess, self.meta_model_path)
 
 
 def train_MAML(
@@ -98,7 +106,7 @@ def train_MAML(
 	setup_logger(logdir, locals())
 
 	# Initialize environment
-	env = make(game='SonicTheHedgehog-Genesis', state='LabyrinthZone.Act1')
+	env = sample_env()
     env.reset()
     ob_dim = env.observation_space.shape[0]
     ac_dim = env.action_space.shape[0]
@@ -111,23 +119,26 @@ def train_MAML(
         'ac_dim': ac_dim
         'batch_size': batch_size
         'horizon': horizon
-        'n_trajectories': n_trajectories  
+        'n_trajectories': n_trajectories
+        'replay_buffer_size': 1000000
+        'frame_history_len': 4
     }
 
     # Initialize metalearner
     maml_agent = MAML(computation_graph_args)
     maml_agent.build_computation_graph()
+    maml_agent.build_meta_computation_graph()
     maml_agent.init_tf_sess()
 
     for i in range(n_iter):
     	print("********** Iteration %i ************"%itr)
     	# TODO: replace num_tasks with number of training levels
-    	tasks = np.random.choice(num_tasks, batch_size)
-    	for task in tasks:
-    		maml_agent.sample_trajectories(task, for_meta=False)
+    	envs = [sample_env() for _ in range(batch_size)]
+    	for env in envs:
+    		maml_agent.sample_trajectories(env, for_meta=False)
 
 	    	# TODO: Extract trajectories from replay buffer
-	    	# Evaluate gradients and update adapted parameters
+	    	meta_model = maml_agent.get_meta_model()
 
             maml_agent.sample_trajectories(task, for_meta=True)
 
@@ -170,3 +181,6 @@ def main():
 		horizon=horizon,
 		n_trajectories=n_trajectories
 	)
+
+if __name__ == '__main__':
+    main()
