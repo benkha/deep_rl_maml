@@ -10,7 +10,7 @@ from retro_contest.local import make
 import retrowrapper
 import random
 
-retrowrapper.set_retro_make( make )
+retrowrapper.set_retro_make(make)
 
 sonic_envs = {
     'SonicTheHedgehog-Genesis': [
@@ -78,12 +78,6 @@ sonic_envs = {
     ]
 }
 
-def sample_env():
-    game_states = [(game, state) for game in sonic_envs for state in sonic_envs[game]]
-    game, state = random.choice(game_states)
-    return make_env(retrowrapper.RetroWrapper(game=game, state=state))
-
-
 def make_env(env, stack=True, scale_rew=True):
     """
     Create an environment with some standard wrappers.
@@ -95,6 +89,15 @@ def make_env(env, stack=True, scale_rew=True):
     if stack:
         env = FrameStack(env, 4)
     return env
+
+
+game_states = [(game, state) for game in sonic_envs for state in sonic_envs[game]]
+game_envs = [make_env(retrowrapper.RetroWrapper(game=game, state=state)) for game, state in game_states]
+
+
+def sample_env():
+    return random.choice(game_envs)
+
 
 class SonicDiscretizer(gym.ActionWrapper):
     """
