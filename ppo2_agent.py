@@ -18,11 +18,14 @@ def main():
     config.gpu_options.allow_growth = True # pylint: disable=E1101
 
     env = sample_env()
+    
+    def make_env():
+        return env
 
     with tf.Session(config=config):
         # Take more timesteps than we need to be sure that
         # we stop due to an exception.
-        # env = DummyVecEnv([make_env])
+        env = DummyVecEnv([make_env])
 
         model, all_returns = ppo2.learn(network='cnn',
                    env=env,

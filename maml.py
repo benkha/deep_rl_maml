@@ -148,8 +148,134 @@ class MAML(object):
         else:
             ValueError("Can't recognize the loss type {}".format(self.loss_type))
 
+    def sample_trajectories_envs(self, envs):
+        for env in envs:
+            trajectories = self.sample_trajectories(env, )
+
+
+    def sample_trajectories(self, env, min_timesteps, is_evaluation=False):
+        # Collect paths until we have enough timesteps
+        timesteps_this_batch = 0
+        stats = []
+        animate_this_episode = False
+        while True:
+            # animate_this_episode=(len(stats)==0 and (itr % 10 == 0) and self.animate)
+            steps, s = self.sample_trajectory(env, animate_this_episode, is_evaluation=is_evaluation)
+            stats += s
+            timesteps_this_batch += steps
+            if timesteps_this_batch > min_timesteps:
+                break
+        return stats, timesteps_this_batch
+
+    def sample_trajectory(self, env, animate_this_episode, is_evaluation):
+        """
+        sample a task, then sample trajectories from that task until either
+        max(self.history, self.max_path_length) timesteps have been sampled
+
+        construct meta-observations by concatenating (s, a, r, d) into one vector
+        inputs to the policy should have the shape (batch_size, self.history, self.meta_ob_dim)
+        zero pad the input to maintain a consistent input shape
+
+        add the entire input as observation to the replay buffer, along with a, r, d
+        samples will be drawn from the replay buffer to update the policy
+
+        arguments:
+            env: the env to sample trajectories from
+            animate_this_episode: if True then render
+            val: whether this is training or evaluation
+        """
+        env.reset_task(is_evaluation=is_evaluation)
+        stats = []
+        #====================================================================================#
+        #                           ----------PROBLEM 2----------
+        #====================================================================================#
+        ep_steps = 0
+        steps = 0
+
+        num_samples = max(self.history, self.max_path_length + 1)
+        meta_obs = np.zeros((num_samples + self.history + 1, self.meta_ob_dim))
+        rewards = []
+
+        while True:
+            if animate_this_episode:
+                env.render()
+                time.sleep(0.1)
+
+            if ep_steps == 0:
+                ob = env.reset()
+                # first meta ob has only the observation
+                # set a, r, d to zero, construct first meta observation in meta_obs
+                # YOUR CODE HERE
+
+                meta_ob = np.concatenate((ob, np.zeros((4))))
+                meta_obs[steps] = meta_ob
+
+                steps += 1
+
+            # index into the meta_obs array to get the window that ends with the current timestep
+            # please name the windowed observation `in_` for compatibilty with the code that adds to the replay buffer (lines 418, 420)
+            # YOUR CODE HERE
+
+            window = np.zeros((1, self.history, self.meta_ob_dim))
+            window[0, self.history - min(ep_steps, self.history):, :] = meta_obs[steps - min(ep_steps, self.history):steps, :]
+
+            hidden = np.zeros((1, self.gru_size), dtype=np.float32)
+
+            # get action from the policy
+            # YOUR CODE HERE
+
+            ac = self.sess.run([self.sy_sampled_ac], feed_dict={
+                self.sy_ob_no: window,
+                self.sy_hidden: hidden
+            })
+
+            ac = np.squeeze(ac)
+
+            # step the environment
+            # YOUR CODE HERE
+
+            ob, rew, done, _ = env.step(ac)
+
+            ob = np.squeeze(ob)
+
+            ep_steps += 1
+
+            done = bool(done) or ep_steps == self.max_path_length
+            # construct the meta-observation and add it to meta_obs
+            # YOUR CODE HERE
+
+            meta_ob = np.concatenate((ob, ac, np.array([rew]), np.array([done])))
+            meta_obs[steps] = meta_ob
+
+            rewards.append(rew)
+            steps += 1
+
+            # add sample to replay buffer
+            if is_evaluation:
+                self.val_replay_buffer.add_sample(window, ac, rew, done, hidden, env._goal)
+            else:
+                self.replay_buffer.add_sample(window, ac, rew, done, hidden, env._goal)
+
+            # start new episode
+            if done:
+                # compute stats over trajectory
+                s = dict()
+                s['rewards']= rewards[-ep_steps:]
+                s['ep_len'] = ep_steps
+                stats.append(s)
+                ep_steps = 0
+
+            if steps >= num_samples:
+                break
+
+        return steps, stats
+
+
+
     def metalearn(self):
-        for i in range(self.n_iter)
+        for i in range(self.n_iter):
+            envs = [sample_env() for _ in range(self.batch_size)]
+            trajectories = self.sample_trajectories(envs)
 
     def evaluate(self):
         return
